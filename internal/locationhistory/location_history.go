@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"googlemaps.github.io/maps"
+	places "cloud.google.com/go/maps/places/apiv1"
+	"cloud.google.com/go/maps/places/apiv1/placespb"
+	"github.com/googleapis/gax-go/v2/callctx"
 )
 
 type Location struct {
@@ -103,7 +105,7 @@ var restaurantPlaceTypes map[string]bool = map[string]bool{
 	"meal_delivery": true,
 }
 
-func isRestaurant(place *maps.PlaceDetailsResult) bool {
+func isRestaurant(place *placespb.Place) bool {
 	for _, placeType := range place.Types {
 		if _, ok := restaurantPlaceTypes[placeType]; ok {
 			return true
@@ -112,28 +114,31 @@ func isRestaurant(place *maps.PlaceDetailsResult) bool {
 	return false
 }
 
-func GetRestaurants(locations []LocationFrequency, c *maps.Client) []Restaurant {
+// Figure out how to do this with free API
+func GetRestaurants(locations []LocationFrequency, c *places.Client) []Restaurant {
 	var restaurants []Restaurant
 	for _, location := range locations {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx = callctx.SetHeaders(ctx, "x-Goog-Fieldmask", "place.displayName gg")
 		defer cancel()
-		place, err := c.PlaceDetails(ctx, &maps.PlaceDetailsRequest{
-			PlaceID: location.Location.PlaceID,
-		})
+		req := &placespb.GetPlaceRequest{
+			Name: "places/" + location.Location.PlaceID,
+		}
+		place, err := c.GetPlace(ctx, req)
 
 		if err != nil {
 			log.Printf("Error getting place details for %s: %v", location.Location.PlaceID, err)
-			continue
-		}
-
-		if isRestaurant(&place) {
-			restaurants = append(restaurants, Restaurant{
-				Name:    place.Name,
-				Address: place.FormattedAddress,
-				PlaceID: place.PlaceID,
-				Visits:  location.Frequency,
-			})
-			fmt.Printf("Found restaurant %s at %s with %d visits\n", place.Name, place.FormattedAddress, location.Frequency)
+		} else {
+			if isRestaurant(place) {
+				restaurants = append(restaurants, Restaurant{
+					Name:    place.Name,
+					Address: place.FormattedAddress,
+					PlaceID: place.Id,
+					Visits:  location.Frequency,
+				})
+				jplace, _ := json.MarshalIndent(place, "", "\t")
+				fmt.Println(string(jplace))
+			}
 		}
 	}
 	return restaurants
