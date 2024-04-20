@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
-	"github.com/WesleyT4N/what-to-eat/internal/maps"
+	"github.com/WesleyT4N/what-to-eat/internal/locationhistory"
+	"github.com/joho/godotenv"
+	"googlemaps.github.io/maps"
 )
 
 func parseArgs() string {
@@ -17,19 +20,35 @@ func parseArgs() string {
 	return filePath
 }
 
+func NewGoogleMapsClient() (*maps.Client, error) {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// Load the API key from the environment
+	apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
+
+	c, err := maps.NewClient(maps.WithAPIKey(apiKey))
+	if err != nil {
+		log.Fatalf("fatal error: %s", err)
+	}
+	return c, err
+}
+
 func main() {
 	filename := parseArgs()
 	fmt.Println("Loading Locations from", filename)
 
-	locations, err := maps.LoadLocationsFromDir(filename)
+	locations, err := locationhistory.LoadLocationsFromDir(filename)
 	if err != nil {
 		panic(err)
 	}
-	for _, location := range locations {
-		loc := location.Location
-		freq := location.Frequency
-		fmt.Println("Location", loc.Name, "at", loc.Address, "with confidence", loc.LocationConfidence, ". Appeared", freq, "times")
-	}
-
 	fmt.Println("Loaded", len(locations), "locations")
+	c, err := NewGoogleMapsClient()
+	if err != nil {
+		panic(err)
+	}
+	restaurants := locationhistory.GetRestaurants(locations, c)
+	fmt.Println("Found", len(restaurants), "restaurants")
 }
