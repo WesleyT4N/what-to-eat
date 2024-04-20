@@ -1,10 +1,16 @@
-package maps
+package locationhistory
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"googlemaps.github.io/maps"
 )
 
 type Location struct {
@@ -81,4 +87,54 @@ func LoadLocationsFromFile(filename string) ([]Location, error) {
 	json.Unmarshal(jsonFile, &result)
 
 	return result.Locations, nil
+}
+
+type Restaurant struct {
+	Name    string
+	Address string
+	PlaceID string
+	Visits  int
+}
+
+var restaurantPlaceTypes map[string]bool = map[string]bool{
+	"restaurant":    true,
+	"food":          true,
+	"meal_takeaway": true,
+	"meal_delivery": true,
+}
+
+func isRestaurant(place *maps.PlaceDetailsResult) bool {
+	for _, placeType := range place.Types {
+		if _, ok := restaurantPlaceTypes[placeType]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func GetRestaurants(locations []LocationFrequency, c *maps.Client) []Restaurant {
+	var restaurants []Restaurant
+	for _, location := range locations {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		place, err := c.PlaceDetails(ctx, &maps.PlaceDetailsRequest{
+			PlaceID: location.Location.PlaceID,
+		})
+
+		if err != nil {
+			log.Printf("Error getting place details for %s: %v", location.Location.PlaceID, err)
+			continue
+		}
+
+		if isRestaurant(&place) {
+			restaurants = append(restaurants, Restaurant{
+				Name:    place.Name,
+				Address: place.FormattedAddress,
+				PlaceID: place.PlaceID,
+				Visits:  location.Frequency,
+			})
+			fmt.Printf("Found restaurant %s at %s with %d visits\n", place.Name, place.FormattedAddress, location.Frequency)
+		}
+	}
+	return restaurants
 }
